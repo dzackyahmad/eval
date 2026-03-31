@@ -73,7 +73,7 @@ test_071,realperson
 test_072,fake_unknown
 test_073,fake_unknown
 test_074,fake_screen
-test_075,realperson
+test_075,fake_printed
 test_076,fake_mask
 test_077,realperson
 test_078,fake_unknown
@@ -260,7 +260,7 @@ test_258,fake_printed
 test_259,fake_unknown
 test_260,fake_screen
 test_261,realperson
-test_262,realperson
+test_262,fake_printed
 test_263,fake_unknown
 test_264,fake_printed
 test_265,fake_printed
