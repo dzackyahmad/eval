@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 from PIL import Image
+from sklearn.metrics import classification_report, f1_score
 
 st.set_page_config(layout="wide")
 st.title("Evaluasi Prediksi")
@@ -31,13 +32,11 @@ else:
 if "id" in gt_df.columns:
     gt_df = gt_df.rename(columns={"id": "image"})
 
-# Tambahkan .jpg jika belum ada
 gt_df["image"] = gt_df["image"].astype(str)
 gt_df["image"] = gt_df["image"].apply(
     lambda x: x if x.endswith(".jpg") else x + ".jpg"
 )
 
-# Validasi
 if not {"image", "label"}.issubset(gt_df.columns):
     st.error("GT harus punya kolom: id/image dan label")
     st.stop()
@@ -58,34 +57,18 @@ def load_image(img_name):
 if pred_file:
     pred_df = pd.read_csv(pred_file)
 
-    # =========================
-    # NORMALISASI KOLOM
-    # =========================
+    # Normalisasi kolom
     if "id" in pred_df.columns:
         pred_df = pred_df.rename(columns={"id": "image"})
 
-    # Tambahkan .jpg kalau belum ada
     pred_df["image"] = pred_df["image"].astype(str)
     pred_df["image"] = pred_df["image"].apply(
         lambda x: x if x.endswith(".jpg") else x + ".jpg"
     )
 
-    # Validasi
     if not {"image", "label"}.issubset(pred_df.columns):
         st.error("Prediksi harus punya kolom: id/image dan label")
         st.stop()
-
-    # =========================
-    # MISMATCH
-    # =========================
-    missing_in_pred = set(gt_df["image"]) - set(pred_df["image"])
-    extra_in_pred = set(pred_df["image"]) - set(gt_df["image"])
-
-    if missing_in_pred:
-        st.warning(f"{len(missing_in_pred)} data GT tidak ada di prediksi")
-
-    if extra_in_pred:
-        st.warning(f"{len(extra_in_pred)} data prediksi tidak ada di GT")
 
     # =========================
     # MERGE
@@ -104,11 +87,10 @@ if pred_file:
         axis=1
     )
 
-    # Sort BEDA di atas
     merged = merged.sort_values(by="hasil", ascending=True)
 
     # =========================
-    # METRICS
+    # BASIC METRICS
     # =========================
     total = len(merged)
     benar = (merged["hasil"] == "SAMA").sum()
@@ -120,7 +102,42 @@ if pred_file:
     col3.metric("Tingkat Kesamaan (%)", f"{akurasi:.2f}")
 
     # =========================
-    # TABEL
+    # CONFUSION MATRIX
+    # =========================
+    st.subheader("Confusion Matrix")
+
+    cm = pd.crosstab(
+        merged["label_gt"],
+        merged["label_pred"],
+        rownames=["Actual"],
+        colnames=["Predicted"],
+        dropna=False
+    )
+
+    st.dataframe(cm, use_container_width=True)
+
+    # =========================
+    # MACRO F1 + REPORT
+    # =========================
+    st.subheader("Evaluasi (Macro F1)")
+
+    y_true = merged["label_gt"]
+    y_pred = merged["label_pred"]
+
+    macro_f1 = f1_score(y_true, y_pred, average="macro")
+    st.metric("Macro F1 Score", f"{macro_f1:.4f}")
+
+    report = classification_report(y_true, y_pred, output_dict=True)
+    report_df = pd.DataFrame(report).transpose()
+
+    # Urutkan dari terburuk
+    report_df = report_df.sort_values(by="f1-score")
+
+    st.subheader("Detail per Class (Precision, Recall, F1)")
+    st.dataframe(report_df, use_container_width=True)
+
+    # =========================
+    # TABEL PERBANDINGAN
     # =========================
     st.subheader("Tabel Perbandingan")
 
@@ -135,7 +152,7 @@ if pred_file:
     )
 
     # =========================
-    # DETAIL
+    # DETAIL GAMBAR
     # =========================
     st.subheader("Detail Gambar")
 
@@ -151,8 +168,8 @@ if pred_file:
 
         with cols[1]:
             st.write(f"Image: {row['image']}")
-            st.write(f"GT: {row['label_ground_truth']}")
-            st.write(f"Pred: {row['label_prediksi']}")
+            st.write(f"GT: {row['label_gt']}")
+            st.write(f"Pred: {row['label_pred']}")
             st.write(f"Hasil: {row['hasil']}")
 
         st.markdown("---")
@@ -167,3 +184,4 @@ if pred_file:
         file_name="hasil.csv",
         mime="text/csv"
     )
+
