@@ -12,6 +12,14 @@ st.title("Evaluasi Prediksi")
 # =========================
 DEFAULT_GT_PATH = "ground_truth.csv"
 IMAGE_FOLDER = "test"
+VALID_EXT = [".jpg", ".jpeg", ".png"]
+
+def normalize_filename(x):
+    x = x.lower()
+    if any(x.endswith(ext) for ext in VALID_EXT):
+        return x
+    return x + ".jpg"  # fallback
+
 
 # =========================
 # GROUND TRUTH
@@ -33,9 +41,7 @@ if "id" in gt_df.columns:
     gt_df = gt_df.rename(columns={"id": "image"})
 
 gt_df["image"] = gt_df["image"].astype(str)
-gt_df["image"] = gt_df["image"].apply(
-    lambda x: x if x.endswith(".jpg") else x + ".jpg"
-)
+gt_df["image"] = gt_df["image"].apply(normalize_filename)
 
 if not {"image", "label"}.issubset(gt_df.columns):
     st.error("GT harus punya kolom: id/image dan label")
@@ -48,9 +54,13 @@ pred_file = st.file_uploader("Upload Prediksi (CSV)", type=["csv"])
 
 
 def load_image(img_name):
-    path = os.path.join(IMAGE_FOLDER, img_name)
-    if os.path.exists(path):
-        return Image.open(path)
+    base = os.path.splitext(img_name)[0]
+
+    for ext in VALID_EXT:
+        path = os.path.join(IMAGE_FOLDER, base + ext)
+        if os.path.exists(path):
+            return Image.open(path)
+
     return None
 
 
@@ -62,9 +72,7 @@ if pred_file:
         pred_df = pred_df.rename(columns={"id": "image"})
 
     pred_df["image"] = pred_df["image"].astype(str)
-    pred_df["image"] = pred_df["image"].apply(
-        lambda x: x if x.endswith(".jpg") else x + ".jpg"
-    )
+    pred_df["image"] = pred_df["image"].apply(normalize_filename)
 
     if not {"image", "label"}.issubset(pred_df.columns):
         st.error("Prediksi harus punya kolom: id/image dan label")
