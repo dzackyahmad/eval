@@ -14,11 +14,28 @@ DEFAULT_GT_PATH = "ground_truth.csv"
 IMAGE_FOLDER = "test"
 VALID_EXT = [".jpg", ".jpeg", ".png"]
 
+# Kode label sesuai Petunjuk Teknis BDC Satria Data 2026
+LABEL_MAP = {0: "Recyclable", 1: "Electronic", 2: "Organic"}
+
+
 def normalize_filename(x):
     x = x.lower()
     if any(x.endswith(ext) for ext in VALID_EXT):
         return x
     return x + ".jpg"  # fallback
+
+
+def normalize_columns(df):
+    """Terima format resmi BDC (id, predicted) maupun (image, label)."""
+    df = df.rename(columns={"id": "image", "predicted": "label"})
+    return df
+
+
+def map_label(x):
+    try:
+        return LABEL_MAP.get(int(x), str(x))
+    except (ValueError, TypeError):
+        return str(x)
 
 
 # =========================
@@ -29,28 +46,30 @@ gt_upload = st.file_uploader("Upload Ground Truth (opsional)", type=["csv"])
 if gt_upload:
     gt_df = pd.read_csv(gt_upload)
     st.info("Menggunakan Ground Truth upload")
-else:
-    if not os.path.exists(DEFAULT_GT_PATH):
-        st.error("ground_truth.csv tidak ditemukan")
-        st.stop()
+elif os.path.exists(DEFAULT_GT_PATH):
     gt_df = pd.read_csv(DEFAULT_GT_PATH)
     st.info("Menggunakan Ground Truth default")
+else:
+    st.warning("Ground Truth belum ada. Silakan upload Ground Truth untuk melanjutkan.")
+    st.stop()
 
 # Normalisasi GT
-if "id" in gt_df.columns:
-    gt_df = gt_df.rename(columns={"id": "image"})
+gt_df = normalize_columns(gt_df)
+
+if not {"image", "label"}.issubset(gt_df.columns):
+    st.error("GT harus punya kolom: id/image dan label/predicted")
+    st.stop()
 
 gt_df["image"] = gt_df["image"].astype(str)
 gt_df["image"] = gt_df["image"].apply(normalize_filename)
-
-if not {"image", "label"}.issubset(gt_df.columns):
-    st.error("GT harus punya kolom: id/image dan label")
-    st.stop()
+gt_df["label"] = gt_df["label"].apply(map_label)
 
 # =========================
 # PREDIKSI USER
 # =========================
-pred_file = st.file_uploader("Upload Prediksi (CSV)", type=["csv"])
+pred_file = st.file_uploader(
+    "Upload Prediksi (CSV, format submission: id,predicted)", type=["csv"]
+)
 
 
 def load_image(img_name):
@@ -68,15 +87,20 @@ if pred_file:
     pred_df = pd.read_csv(pred_file)
 
     # Normalisasi kolom
-    if "id" in pred_df.columns:
-        pred_df = pred_df.rename(columns={"id": "image"})
+    pred_df = normalize_columns(pred_df)
+
+    if not {"image", "label"}.issubset(pred_df.columns):
+        st.error("Prediksi harus punya kolom: id/image dan label/predicted")
+        st.stop()
 
     pred_df["image"] = pred_df["image"].astype(str)
     pred_df["image"] = pred_df["image"].apply(normalize_filename)
+    pred_df["label"] = pred_df["label"].apply(map_label)
 
-    if not {"image", "label"}.issubset(pred_df.columns):
-        st.error("Prediksi harus punya kolom: id/image dan label")
-        st.stop()
+    # Ketentuan panitia: urutan submission harus sesuai submission.csv (test 1-1458),
+    # urutan tidak boleh diubah peserta.
+    if len(pred_df) != len(pred_df["image"].unique()):
+        st.warning("Terdapat id duplikat pada file prediksi.")
 
     # =========================
     # MERGE
@@ -86,6 +110,12 @@ if pred_file:
     if merged.empty:
         st.error("Tidak ada data yang match")
         st.stop()
+
+    if len(merged) != len(pred_df):
+        st.warning(
+            f"Hanya {len(merged)} dari {len(pred_df)} baris prediksi yang cocok "
+            f"dengan Ground Truth (id/image tidak ditemukan di GT)."
+        )
 
     # =========================
     # COMPARE
@@ -122,7 +152,7 @@ if pred_file:
         dropna=False
     )
 
-    st.dataframe(cm, use_container_width=True)
+    st.dataframe(cm, width="stretch")
 
     # =========================
     # MACRO F1 + REPORT
@@ -132,17 +162,17 @@ if pred_file:
     y_true = merged["label_gt"]
     y_pred = merged["label_pred"]
 
-    macro_f1 = f1_score(y_true, y_pred, average="macro")
+    macro_f1 = f1_score(y_true, y_pred, average="macro", zero_division=0)
     st.metric("Macro F1 Score", f"{macro_f1:.4f}")
 
-    report = classification_report(y_true, y_pred, output_dict=True)
+    report = classification_report(y_true, y_pred, output_dict=True, zero_division=0)
     report_df = pd.DataFrame(report).transpose()
 
     # Urutkan dari terburuk
     report_df = report_df.sort_values(by="f1-score")
 
     st.subheader("Detail per Class (Precision, Recall, F1)")
-    st.dataframe(report_df, use_container_width=True)
+    st.dataframe(report_df, width="stretch")
 
     # =========================
     # TABEL PERBANDINGAN
@@ -156,31 +186,34 @@ if pred_file:
 
     st.dataframe(
         merged.style.apply(highlight, axis=1),
-        use_container_width=True
+        width="stretch"
     )
 
     # =========================
-    # DETAIL GAMBAR
+    # DETAIL GAMBAR (SALAH SAJA)
     # =========================
-    st.subheader("Detail Gambar")
+    st.subheader("Detail Gambar (Salah)")
 
-    for _, row in merged.iterrows():
-        cols = st.columns([1, 2])
+    salah_df = merged[merged["hasil"] == "BEDA"]
 
-        with cols[0]:
-            img = load_image(row["image"])
-            if img:
-                st.image(img, width=120)
-            else:
-                st.write("Image tidak ditemukan")
+    if salah_df.empty:
+        st.success("Tidak ada prediksi yang salah.")
+    else:
+        n_cols = 5
+        rows = salah_df.to_dict("records")
 
-        with cols[1]:
-            st.write(f"Image: {row['image']}")
-            st.write(f"GT: {row['label_gt']}")
-            st.write(f"Pred: {row['label_pred']}")
-            st.write(f"Hasil: {row['hasil']}")
-
-        st.markdown("---")
+        for i in range(0, len(rows), n_cols):
+            cols = st.columns(n_cols)
+            for col, row in zip(cols, rows[i:i + n_cols]):
+                with col:
+                    img = load_image(row["image"])
+                    if img:
+                        st.image(img, width=120)
+                    else:
+                        st.write("Image tidak ditemukan")
+                    st.caption(
+                        f"{row['image']}\nGT: {row['label_gt']}\nPred: {row['label_pred']}"
+                    )
 
     # =========================
     # DOWNLOAD
