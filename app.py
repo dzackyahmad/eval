@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import altair as alt
 import os
 from PIL import Image
 from sklearn.metrics import classification_report, f1_score
@@ -152,7 +153,33 @@ if pred_file:
         dropna=False
     )
 
-    st.dataframe(cm, width="stretch")
+    cm_long = cm.reset_index().melt(id_vars="Actual", var_name="Predicted", value_name="Jumlah")
+    max_count = cm_long["Jumlah"].max()
+
+    heatmap = alt.Chart(cm_long).mark_rect().encode(
+        x=alt.X("Predicted:N", sort=list(cm.columns), title="Predicted"),
+        y=alt.Y("Actual:N", sort=list(cm.index), title="Actual"),
+        color=alt.Color(
+            "Jumlah:Q",
+            scale=alt.Scale(scheme="blues"),
+            legend=alt.Legend(title="Jumlah"),
+        ),
+        tooltip=["Actual", "Predicted", "Jumlah"],
+    )
+
+    labels = alt.Chart(cm_long).mark_text(baseline="middle").encode(
+        x=alt.X("Predicted:N", sort=list(cm.columns)),
+        y=alt.Y("Actual:N", sort=list(cm.index)),
+        text="Jumlah:Q",
+        color=alt.condition(
+            alt.datum.Jumlah > max_count / 2, alt.value("white"), alt.value("black")
+        ),
+    )
+
+    st.altair_chart(heatmap + labels, width="stretch")
+
+    with st.expander("Tabel Confusion Matrix"):
+        st.dataframe(cm, width="stretch")
 
     # =========================
     # MACRO F1 + REPORT
@@ -208,7 +235,7 @@ if pred_file:
                 with col:
                     img = load_image(row["image"])
                     if img:
-                        st.image(img, width=120)
+                        st.image(img, width="stretch")
                     else:
                         st.write("Image tidak ditemukan")
                     st.caption(
