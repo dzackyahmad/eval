@@ -190,7 +190,7 @@ if pred_file:
     y_pred = merged["label_pred"]
 
     macro_f1 = f1_score(y_true, y_pred, average="macro", zero_division=0)
-    st.metric("Macro F1 Score", f"{macro_f1:.5f}")
+    st.metric("Macro F1 Score", f"{macro_f1 * 100:.7f}")
 
     report = classification_report(y_true, y_pred, output_dict=True, zero_division=0)
     report_df = pd.DataFrame(report).transpose()
